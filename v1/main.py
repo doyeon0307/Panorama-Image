@@ -3,7 +3,7 @@ from PIL import Image, ImageOps
 import matplotlib
 matplotlib.use('Agg')  # GUI 없이 이미지 저장
 import matplotlib.pyplot as plt
-from panorama import create_panorama, detect_harris_corner, find_correspondences, stitch_images
+from panorama import create_panorama, detect_harris_corner, find_correspondences
 import os
 
 def load_image(image_path):
