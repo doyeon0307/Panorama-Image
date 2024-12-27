@@ -126,16 +126,16 @@ def find_correspondences(image1: np.ndarray, image2: np.ndarray,
     half_window = window_size // 2
     
     # 1. 매칭 영역 제한 (오버랩 영역만 고려)
-    right_region = width * 0.4  # 첫 이미지의 오른쪽 60% 영역만 사용
-    left_region = width * 0.6   # 두번째 이미지의 왼쪽 60% 영역만 사용
+    right_region = width * 0.4
+    left_region = width * 0.6
     
     # 2. 코너점 필터링
     corners1_right = [(x, y) for x, y in corners1 if x > right_region]
     corners2_left = [(x, y) for x, y in corners2 if x < left_region]
     
     matches = []
-    vertical_tolerance = int(height * 0.05)  # 수직 방향 허용 범위 5%로 감소
-    
+    vertical_tolerance = int(height * 0.05)
+
     # 3. 각 코너점에 대해 매칭 시도
     for x1, y1 in corners1_right:
         if y1 < half_window or y1 >= height - half_window or \
@@ -185,7 +185,7 @@ def find_correspondences(image1: np.ndarray, image2: np.ndarray,
         # 6. 엄격한 매칭 기준 적용
         if best_match and \
            best_score > 0.9 and \
-           best_score > second_best_score * 1.5:  # 더 엄격한 ratio test
+           best_score > second_best_score * 1.5:
             
             # 7. 이동 거리 제한 (너무 먼 매칭 제외)
             dx = abs(x1 - best_match[0])
@@ -197,7 +197,7 @@ def find_correspondences(image1: np.ndarray, image2: np.ndarray,
     # 8. 공간적 분포 개선
     if matches:
         filtered_matches = []
-        min_distance = height * 0.02  # 최소 거리: 이미지 높이의 2%
+        min_distance = height * 0.02
         
         # 매칭 품질로 정렬
         matches.sort(key=lambda m: abs(m[0][1] - m[1][1]))  # y 좌표 차이가 작은 순
@@ -336,15 +336,15 @@ def stitch_images(img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
     result = np.zeros((h_new, w_new, 3), dtype=np.float32)
     weights = np.zeros((h_new, w_new), dtype=np.float32)
     
-    # 두 번째 이미지 먼저 복사
+    # 두 번째 이미지 복사 (가중치는 1로 시작)
     x_coords, y_coords = np.meshgrid(np.arange(w_new), np.arange(h_new))
     img2_coords = np.stack([x_coords + min_x, y_coords + min_y], axis=-1)
-    valid_mask = ((img2_coords[..., 0] >= 0) & (img2_coords[..., 0] < w2) &
-                 (img2_coords[..., 1] >= 0) & (img2_coords[..., 1] < h2))
+    valid_mask2 = ((img2_coords[..., 0] >= 0) & (img2_coords[..., 0] < w2) &
+                  (img2_coords[..., 1] >= 0) & (img2_coords[..., 1] < h2))
     
-    result[valid_mask] = img2[img2_coords[valid_mask, 1].astype(int),
-                             img2_coords[valid_mask, 0].astype(int)]
-    weights[valid_mask] = 1.0
+    result[valid_mask2] = img2[img2_coords[valid_mask2, 1].astype(int),
+                              img2_coords[valid_mask2, 0].astype(int)]
+    weights[valid_mask2] = 1.0
     
     # 첫 번째 이미지 워핑
     H_inv = np.linalg.inv(H_adjusted)
@@ -358,8 +358,8 @@ def stitch_images(img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
     src_coords = src_coords.reshape(h_new, w_new, 2)
     
     # 유효한 좌표만 선택
-    valid_mask = ((src_coords[..., 0] >= 0) & (src_coords[..., 0] < w1-1) &
-                 (src_coords[..., 1] >= 0) & (src_coords[..., 1] < h1-1))
+    valid_mask1 = ((src_coords[..., 0] >= 0) & (src_coords[..., 0] < w1-1) &
+                  (src_coords[..., 1] >= 0) & (src_coords[..., 1] < h1-1))
     
     # 이중선형 보간
     x = src_coords[..., 0]
@@ -375,83 +375,155 @@ def stitch_images(img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
     wd = (x - x0) * (y - y0)
     
     # 유효한 픽셀에 대해서만 보간
-    valid_coords = valid_mask & (x1 < w1) & (y1 < h1)
+    valid_coords = valid_mask1 & (x1 < w1) & (y1 < h1)
     if np.any(valid_coords):
-        result[valid_coords] = (
+        img1_warped = (
             wa[valid_coords, np.newaxis] * img1[y0[valid_coords], x0[valid_coords]] +
             wb[valid_coords, np.newaxis] * img1[y0[valid_coords], x1[valid_coords]] +
             wc[valid_coords, np.newaxis] * img1[y1[valid_coords], x0[valid_coords]] +
             wd[valid_coords, np.newaxis] * img1[y1[valid_coords], x1[valid_coords]]
         )
-        weights[valid_coords] += (wa + wb + wc + wd)[valid_coords]
-    
-    # 가중치로 나누어 정규화
-    weights = np.maximum(weights, 1e-10)[..., np.newaxis]
-    result = result / weights
-    
-    return result.astype(np.uint8)
-
-
-def compute_homography(src_points: np.ndarray, dst_points: np.ndarray) -> np.ndarray:
-    """호모그래피 행렬 계산
-    Args:
-        src_points: 소스 이미지의 대응점 좌표 (N x 2)
-        dst_points: 목적 이미지의 대응점 좌표 (N x 2)
-    Returns:
-        3x3 호모그래피 행렬
-    """
-    if len(src_points) < 4 or len(dst_points) < 4:
-        return None
         
-    num_points = min(len(src_points), len(dst_points))
-    A = np.zeros((num_points * 2, 9))
-    
-    for i in range(num_points):
-        x, y = src_points[i]
-        u, v = dst_points[i]
+        # 오버랩 영역 처리
+        overlap_mask = valid_coords & valid_mask2
+        non_overlap_mask = valid_coords & ~valid_mask2
         
-        A[i*2] = [x, y, 1, 0, 0, 0, -x*u, -y*u, -u]
-        A[i*2+1] = [0, 0, 0, x, y, 1, -x*v, -y*v, -v]
-    
-    # SVD 계산
-    _, _, Vt = np.linalg.svd(A)
-    
-    # 마지막 행이 호모그래피 행렬의 요소들
-    H = Vt[-1].reshape(3, 3)
-    
-    # 정규화
-    if abs(H[2,2]) > 1e-8:  # 0으로 나누는 것 방지
-        H = H / H[2,2]
-    else:
-        return None
-    
-    return H
-
-
-def describe_keypoints(img, keypoints, patch_size=9):
-    """키포인트 주변의 패치를 특징 벡터로 변환
-    
-    Args:
-        img: 입력 이미지
-        keypoints: 코너점 좌표 리스트 [(x1,y1), (x2,y2), ...]
-        patch_size: 특징 패치의 크기 (기본값: 9x9)
-    
-    Returns:
-        descriptors: 각 키포인트의 특징 벡터를 담은 배열
-    """
-    descriptors = []
-    half_patch = patch_size // 2
-    
-    for x, y in keypoints:
-        if (y >= half_patch and y < img.shape[0] - half_patch and 
-            x >= half_patch and x < img.shape[1] - half_patch):
-            # 키포인트 주변의 패치 추출
-            patch = img[y-half_patch:y+half_patch+1, x-half_patch:x+half_patch+1]
-            # 패치 정규화
-            descriptor = (patch - np.mean(patch)) / (np.std(patch) + 1e-7)
-            descriptors.append(descriptor.flatten())
+        # 비 오버랩 영역: 그대로 복사
+        result[non_overlap_mask] = img1_warped[np.where(non_overlap_mask[valid_coords])[0]]
+        
+        # 오버랩 영역: 선형 블렌딩
+        if np.any(overlap_mask):
+            # x 좌표에 따른 가중치 설정 (왼쪽에서 오른쪽으로 부드럽게 전환)
+            x_progress = (x_coords[overlap_mask] - np.min(x_coords[overlap_mask])) / \
+                        (np.max(x_coords[overlap_mask]) - np.min(x_coords[overlap_mask]))
+            w1_blend = 1 - x_progress
+            w2_blend = x_progress
             
-    return np.array(descriptors)
+            # 블렌딩 적용
+            overlap_indices = np.where(overlap_mask[valid_coords])[0]
+            result[overlap_mask] = w1_blend[:, np.newaxis] * img1_warped[overlap_indices] + \
+                                 w2_blend[:, np.newaxis] * result[overlap_mask]
+    
+    result = apply_tone_mapping(result.astype(np.uint8))
+    
+    return result
+
+
+def apply_tone_mapping(panorama):
+    """파노라마의 색조와 명암을 보정하는 함수
+    
+    Args:
+        panorama: 입력 파노라마 이미지
+    Returns:
+        톤 매핑이 적용된 파노라마 이미지
+    """
+    if panorama is None:
+        return None
+    
+    # 입력 이미지를 float32로 변환
+    img = panorama.astype(np.float32)
+    
+    def adjust_channel(channel):
+        """단일 채널에 대한 톤 매핑 적용"""
+        valid_mask = channel > 0
+        if not np.any(valid_mask):
+            return channel
+            
+        # 1. 지역적 톤 매핑
+        height, width = channel.shape
+        tile_size = (height // 8, width // 8)  # 8x8 타일
+        
+        # 결과 및 가중치 누적을 위한 배열
+        result = np.zeros_like(channel)
+        weight_sum = np.zeros_like(channel)
+        
+        # 타일 단위로 처리
+        for y in range(0, height, tile_size[0] // 2):  # 50% 오버랩
+            for x in range(0, width, tile_size[1] // 2):  # 50% 오버랩
+                # 현재 타일의 실제 크기
+                y_end = min(y + tile_size[0], height)
+                x_end = min(x + tile_size[1], width)
+                tile_h = y_end - y
+                tile_w = x_end - x
+                
+                # 타일 추출
+                tile = channel[y:y_end, x:x_end]
+                
+                # 유효한 픽셀에 대해서만 처리
+                tile_valid = tile[tile > 0]
+                if len(tile_valid) == 0:
+                    continue
+                    
+                # 지역적 통계
+                local_min = np.percentile(tile_valid, 1)
+                local_max = np.percentile(tile_valid, 99)
+                local_std = np.std(tile_valid)
+                
+                if local_std < 1e-6 or local_max <= local_min:
+                    continue
+                
+                # 지역적 정규화 및 대비 향상
+                tile_norm = np.clip((tile - local_min) / (local_max - local_min), 0, 1)
+                
+                # 감마 보정
+                gamma = 0.7 + 0.6 * (local_std / 128.0)  # 표준편차에 따라 감마값 조정
+                tile_gamma = np.power(tile_norm, gamma)
+                
+                # 원래 범위로 복원
+                tile_enhanced = tile_gamma * (local_max - local_min) + local_min
+                
+                # 가중치 맵 생성 (가장자리로 갈수록 감소)
+                weight = np.ones((tile_h, tile_w))
+                
+                # 수평 방향 가중치
+                if x > 0:
+                    ramp = np.linspace(0, 1, min(tile_size[1]//4, tile_w))
+                    weight[:, :len(ramp)] *= ramp
+                if x + tile_w < width:
+                    ramp = np.linspace(1, 0, min(tile_size[1]//4, tile_w))
+                    weight[:, -len(ramp):] *= ramp
+                
+                # 수직 방향 가중치
+                if y > 0:
+                    ramp = np.linspace(0, 1, min(tile_size[0]//4, tile_h))
+                    weight[:len(ramp), :] *= ramp[:, np.newaxis]
+                if y + tile_h < height:
+                    ramp = np.linspace(1, 0, min(tile_size[0]//4, tile_h))
+                    weight[-len(ramp):, :] *= ramp[:, np.newaxis]
+                
+                # 결과 누적
+                result[y:y_end, x:x_end] += tile_enhanced * weight
+                weight_sum[y:y_end, x:x_end] += weight
+        
+        # 가중치로 정규화
+        mask = weight_sum > 0
+        result[mask] /= weight_sum[mask]
+        
+        # 2. 전역적 톤 매핑
+        valid_pixels = result[valid_mask]
+        global_min = np.percentile(valid_pixels, 1)
+        global_max = np.percentile(valid_pixels, 99)
+        
+        # 최종 정규화 및 감마 보정
+        global_norm = np.clip((result - global_min) / (global_max - global_min), 0, 1)
+        final_gamma = 0.9
+        result = np.power(global_norm, final_gamma) * 255
+        
+        # 유효하지 않은 픽셀은 0으로
+        result[~valid_mask] = 0
+        
+        return np.clip(result, 0, 255).astype(np.float32)
+    
+    # 각 채널별로 톤 매핑 적용
+    result = np.zeros_like(img)
+    for i in range(3):  # RGB 각 채널
+        result[..., i] = adjust_channel(img[..., i])
+    
+    # 채도 향상
+    means = np.mean(result, axis=2, keepdims=True)
+    result = means + 1.2 * (result - means)  # 채도 20% 증가
+    
+    return np.clip(result, 0, 255).astype(np.uint8)
 
 
 def create_panorama(image_list):

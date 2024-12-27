@@ -3,7 +3,7 @@ from PIL import Image, ImageOps
 import matplotlib
 matplotlib.use('Agg')  # GUI 없이 이미지 저장
 import matplotlib.pyplot as plt
-from panorama import create_panorama, detect_harris_corner, find_correspondences, stitch_images
+from panorama import create_panorama, detect_harris_corner, find_correspondences
 import os
 
 def load_image(image_path):
@@ -60,7 +60,7 @@ def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     test_dir = os.path.join(current_dir, 'test_images')
     result_dir = os.path.join(current_dir, 'result_images')
-    
+
     if not os.path.exists(result_dir):
         os.makedirs(result_dir)
 
@@ -87,30 +87,6 @@ def main():
     if len(images) < 2:
         return
 
-    # 첫 두 이미지에 대한 중간 과정 시각화
-    img1, img2 = images[0], images[1]
-    
-    # 그레이스케일 변환
-    gray1 = np.mean(img1, axis=2).astype(np.float32)
-    gray2 = np.mean(img2, axis=2).astype(np.float32)
-    
-    # 코너 검출
-    print("\n코너 검출 중...")
-    corners1 = detect_harris_corner(gray1)
-    corners2 = detect_harris_corner(gray2)
-    print(f"검출된 코너점 수: {len(corners1)}, {len(corners2)}")
-    
-    # 코너점 매칭
-    print("\n매칭점 찾는 중...")
-    matches = find_correspondences(img1, img2, corners1, corners2)
-    print(f"찾은 매칭점 수: {len(matches)}")
-    
-    # 매칭 결과 시각화
-    print("\n매칭점 시각화 중...")
-    matched_pairs = visualize_matches(img1, img2, corners1, corners2, matches, 
-                                    "Keypoint Matches between Images",
-                                    os.path.join(result_dir, "matches.jpg"))
-
     # 파노라마 생성
     print("\n파노라마 생성 중...")
     panorama = create_panorama(images)
@@ -121,7 +97,7 @@ def main():
         Image.fromarray(panorama).save(output_path)
         print(f"\n파노라마 이미지가 성공적으로 생성되었습니다!")
         print(f"저장 위치: {output_path}")
-        
+
         # 결과 이미지 시각화
         plt.figure(figsize=(15, 8))
         plt.imshow(panorama)
@@ -130,6 +106,7 @@ def main():
         plt.close()
     else:
         print("\n파노라마 이미지 생성에 실패했습니다.")
+
 
 if __name__ == "__main__":
     main()
